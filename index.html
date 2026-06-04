@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DTF Smart Nest - Tối Ưu Hóa Khổ In Phim DTF/DTG</title>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  
+  <div class="app-container">
+    <!-- Sidebar Settings -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>DTF Smart Nest</h1>
+        <p>AI Layout Optimizer</p>
+      </div>
+      
+      <div class="sidebar-content">
+        <!-- Settings Form -->
+        <section class="settings-panel panel-card">
+          <h2 class="section-title"><i class="fa-solid fa-sliders"></i> Cấu hình khổ in</h2>
+          
+          <div class="control-group">
+            <label for="sheet-width-select">Chiều rộng cuộn (cm)</label>
+            <select id="sheet-width-select">
+              <option value="30">30 cm (A3 Roll)</option>
+              <option value="57" selected>57 cm (Khuyên dùng)</option>
+              <option value="60">60 cm</option>
+              <option value="120">120 cm</option>
+            </select>
+          </div>
+          
+          <div class="control-group">
+            <label for="length-select">Chiều dài cuộn (cm)</label>
+            <select id="length-select">
+              <option value="auto" selected>Tự động co giãn (Tối ưu nhất)</option>
+              <option value="100">Cố định 100 cm (1m)</option>
+              <option value="200">Cố định 200 cm (2m)</option>
+              <option value="300">Cố định 300 cm (3m)</option>
+              <option value="500">Cố định 500 cm (5m)</option>
+            </select>
+          </div>
+          
+          <div class="checkbox-group" id="auto-fill-group" style="display: none; margin-top: -10px; margin-bottom: 20px;">
+            <label class="custom-checkbox">
+              <input type="checkbox" id="auto-fill-check" checked>
+              <span class="checkmark"></span>
+              Tự động điền đầy khoảng trống
+            </label>
+          </div>
+          
+          <div class="control-group">
+            <div class="label-with-value">
+              <label for="spacing-slider">Khoảng cách hình (mm)</label>
+              <span id="spacing-val">5 mm</span>
+            </div>
+            <input type="range" id="spacing-slider" min="0" max="20" step="1" value="5">
+          </div>
+          
+          <div class="control-group">
+            <label for="dpi-select">Độ phân giải xuất file (DPI)</label>
+            <select id="dpi-select">
+              <option value="150">150 DPI (Nhanh)</option>
+              <option value="300" selected>300 DPI (Chuẩn in ấn)</option>
+              <option value="600">600 DPI (Siêu nét)</option>
+            </select>
+          </div>
+          
+          <div class="control-group">
+            <label for="rotation-select">Góc xoay cho phép</label>
+            <select id="rotation-select">
+              <option value="0">Không xoay (0°)</option>
+              <option value="90">Chỉ xoay 90° (Nhanh)</option>
+              <option value="45">Xoay mỗi 45°</option>
+              <option value="15">Xoay mỗi 15° (Khuyên dùng)</option>
+              <option value="5" selected>Tự do 5° (Tối ưu nhất - Chậm)</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label for="precision-select">Độ chính xác (Lưới Raster)</label>
+            <select id="precision-select">
+              <option value="5">Nhanh (Lưới 5mm)</option>
+              <option value="2">Tiêu chuẩn (Lưới 2mm)</option>
+              <option value="1" selected>Chất lượng cao (Lưới 1mm - Rất chậm)</option>
+            </select>
+          </div>
+        </section>
+        
+        <!-- Upload Form -->
+        <section class="upload-panel panel-card">
+          <h2 class="section-title"><i class="fa-solid fa-cloud-arrow-up"></i> Tải ảnh lên</h2>
+          
+          <div id="dropzone" class="dropzone">
+            <i class="fa-solid fa-file-import drop-icon"></i>
+            <p>Kéo thả các file PNG vào đây<br>hoặc click để chọn</p>
+            <input type="file" id="file-input" multiple accept=".png">
+          </div>
+        </section>
+        
+        <!-- Image List -->
+        <section class="image-list-panel panel-card" style="flex: 1; display: flex; flex-direction: column;">
+          <div class="list-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 class="section-title" style="margin: 0;"><i class="fa-regular fa-images"></i> DANH SÁCH ẢNH (<span id="img-count">0</span>)</h2>
+            <button id="clear-all-btn" class="text-btn"><i class="fa-solid fa-trash-can"></i> Xóa hết</button>
+          </div>
+          
+          <div id="image-list-container" class="image-list-container">
+            <div class="empty-list-state">
+              <i class="fa-regular fa-image"></i>
+              <p>Chưa có hình in nào được tải lên</p>
+            </div>
+            <!-- Dynamic rows will be injected here -->
+          </div>
+        </section>
+      </div>
+      
+      <!-- Action Footer -->
+      <div class="sidebar-footer">
+        <button id="optimize-btn" class="primary-btn pulse"><i class="fa-solid fa-wand-magic-sparkles"></i> Tối ưu hóa sơ đồ in</button>
+      </div>
+    </aside>
+    
+    <!-- Main Workspace -->
+    <main class="workspace">
+      
+      <!-- Top Action Bar -->
+      <header class="top-bar">
+        <div class="stats-panel">
+          <div class="stat-box">
+            <span class="stat-label">Hiệu suất decal</span>
+            <span class="stat-value" id="stat-efficiency">0%</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-box">
+            <span class="stat-label">Chiều dài màng in</span>
+            <span class="stat-value" id="stat-length">0 cm</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-box">
+            <span class="stat-label">Số lượng in</span>
+            <span class="stat-value" id="stat-placed">0 / 0</span>
+          </div>
+        </div>
+        
+        <div class="action-buttons">
+          <button id="export-png-btn" class="secondary-btn" disabled><i class="fa-regular fa-file-image"></i> Xuất file PNG</button>
+          <button id="export-pdf-btn" class="secondary-btn" disabled><i class="fa-regular fa-file-pdf"></i> Xuất file PDF</button>
+        </div>
+      </header>
+      
+      <!-- Canvas Area -->
+      <div id="canvas-viewport" class="viewport">
+        <!-- Rulers -->
+        <div class="ruler-corner"></div>
+        <canvas id="ruler-top" class="ruler ruler-h"></canvas>
+        <canvas id="ruler-left" class="ruler ruler-v"></canvas>
+        
+        <div id="canvas-container" class="canvas-container">
+          <canvas id="nest-canvas"></canvas>
+        </div>
+      </div>
+    </main>
+    
+    <!-- Optimization Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+      <div class="loader-content">
+        <div class="spinner">
+          <div class="double-bounce1"></div>
+          <div class="double-bounce2"></div>
+        </div>
+        <h3>Đang tối ưu hóa sơ đồ in...</h3>
+        <p>Thuật toán đang thử nghiệm các vị trí và góc xoay tối ưu nhất.</p>
+        <div class="progress-bar-container">
+          <div id="optimize-progress" class="progress-bar" style="width: 0%"></div>
+        </div>
+        <div class="progress-text"><span id="optimize-percentage">0%</span> hoàn thành</div>
+      </div>
+    </div>
+    
+    <!-- High Res Export Loading Overlay -->
+    <div id="export-overlay" class="loading-overlay hidden">
+      <div class="loader-content">
+        <div class="spinner">
+          <div class="double-bounce1"></div>
+          <div class="double-bounce2"></div>
+        </div>
+        <h3>Đang xử lý kết xuất file độ phân giải cao...</h3>
+        <p>Vui lòng chờ trong giây lát. Quá trình này có thể mất vài giây tùy vào DPI và chiều dài cuộn.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="nesting.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
