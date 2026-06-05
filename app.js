@@ -19,6 +19,7 @@ const state = {
   rotationStepDeg: 5,
   precisionMm: 1,
   dpi: 300,
+  compressPng: true,
   
   // Viewport navigation
   zoom: 1.0,
@@ -168,6 +169,7 @@ const elements = {
   spacingSlider: document.getElementById('spacing-slider'),
   spacingVal: document.getElementById('spacing-val'),
   dpiSelect: document.getElementById('dpi-select'),
+  compressPngCheck: document.getElementById('compress-png-check'),
   rotationSelect: document.getElementById('rotation-select'),
   precisionSelect: document.getElementById('precision-select'),
   fileInput: document.getElementById('file-input'),
@@ -243,6 +245,10 @@ function init() {
   
   elements.dpiSelect.addEventListener('change', (e) => {
     state.dpi = parseInt(e.target.value);
+  });
+  
+  elements.compressPngCheck.addEventListener('change', (e) => {
+    state.compressPng = e.target.checked;
   });
   
   elements.rotationSelect.addEventListener('change', (e) => {
@@ -1493,9 +1499,40 @@ async function exportPNG() {
 }
 
 async function exportSinglePNG(dpi) {
-  elements.exportOverlay.querySelector('p').textContent = 'Đang xử lý kết xuất file PNG...';
+  elements.exportOverlay.querySelector('p').textContent = 'Đang chuẩn bị kết xuất...';
   elements.exportOverlay.classList.remove('hidden');
-  setTimeout(() => {
+  
+  // Yield to let loading overlay paint
+  await new Promise(resolve => setTimeout(resolve, 50));
+  
+  try {
+    if (state.compressPng) {
+      elements.exportOverlay.querySelector('p').textContent = 'Đang tải bộ mã hóa tối ưu...';
+      
+      if (!window.pako) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.body.appendChild(script);
+        });
+      }
+      
+      if (!window.UPNG) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/UPNG.js/2.1.0/UPNG.min.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.body.appendChild(script);
+        });
+      }
+    }
+    
+    elements.exportOverlay.querySelector('p').textContent = 'Đang vẽ sơ đồ in...';
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
     const scaleFactor = dpi / (2.54 * state.PX_PER_CM);
     const widthPx = Math.ceil(elements.canvas.width * scaleFactor);
     const heightPx = Math.ceil(elements.canvas.height * scaleFactor);
@@ -1522,14 +1559,37 @@ async function exportSinglePNG(dpi) {
     });
     
     const link = document.createElement('a');
-    link.download = `dtf_nest_sheet_${state.sheetWidthCm}cm_${dpi}dpi.png`;
+    link.download = `dtf_nest_sheet_${state.sheetWidthCm}cm_${dpi}dpi${state.compressPng ? '_optimized' : ''}.png`;
     
-    exportCanvas.toBlob((blob) => {
+    if (state.compressPng) {
+      elements.exportOverlay.querySelector('p').textContent = 'Đang nén tối ưu lượng hóa màu (PNG-8)...';
+      await new Promise(resolve => setTimeout(resolve, 100)); // Give UI time to update
+      
+      const imgData = exportCtx.getImageData(0, 0, widthPx, heightPx);
+      
+      // UPNG.encode expects an array of ArrayBuffers containing raw RGBA pixels.
+      // imgData.data.buffer contains the raw RGBA pixels from Canvas.
+      const compressed = window.UPNG.encode([imgData.data.buffer], widthPx, heightPx, 256);
+      const blob = new Blob([compressed], { type: 'image/png' });
+      
       link.href = URL.createObjectURL(blob);
       link.click();
       elements.exportOverlay.classList.add('hidden');
-    }, 'image/png');
-  }, 100);
+    } else {
+      elements.exportOverlay.querySelector('p').textContent = 'Đang tạo file ảnh PNG...';
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      exportCanvas.toBlob((blob) => {
+        link.href = URL.createObjectURL(blob);
+        link.click();
+        elements.exportOverlay.classList.add('hidden');
+      }, 'image/png');
+    }
+  } catch (error) {
+    console.error("Lỗi xuất PNG:", error);
+    alert("Có lỗi xảy ra khi tạo ảnh PNG.");
+    elements.exportOverlay.classList.add('hidden');
+  }
 }
 
 async function exportSVG() {
