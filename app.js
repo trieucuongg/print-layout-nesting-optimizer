@@ -19,7 +19,7 @@ const state = {
   rotationStepDeg: 5,
   precisionMm: 1,
   dpi: 300,
-  compressPng: true,
+  compressPng: false,
   
   // Viewport navigation
   zoom: 1.0,
