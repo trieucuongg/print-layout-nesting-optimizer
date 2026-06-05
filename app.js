@@ -1522,7 +1522,7 @@ async function exportSinglePNG(dpi) {
       if (!window.UPNG) {
         await new Promise((resolve, reject) => {
           const script = document.createElement('script');
-          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/UPNG.js/2.1.0/UPNG.min.js';
+          script.src = 'https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.js';
           script.onload = resolve;
           script.onerror = reject;
           document.body.appendChild(script);
