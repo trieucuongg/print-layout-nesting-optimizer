@@ -182,7 +182,7 @@ const elements = {
   statEfficiency: document.getElementById('stat-efficiency'),
   statPlaced: document.getElementById('stat-placed'),
   exportPngBtn: document.getElementById('export-png-btn'),
-  exportPdfBtn: document.getElementById('export-pdf-btn'),
+  exportSvgBtn: document.getElementById('export-svg-btn'),
   
   // Workspace elements
   viewport: document.getElementById('canvas-viewport'),
@@ -199,12 +199,6 @@ const elements = {
   themeToggleBtn: document.getElementById('theme-toggle-btn'),
   undoBtn: document.getElementById('undo-btn'),
   redoBtn: document.getElementById('redo-btn'),
-  exportOptionsModal: document.getElementById('export-options-modal'),
-  modalTargetDpi: document.getElementById('modal-target-dpi'),
-  modalSafeDpi: document.getElementById('modal-safe-dpi'),
-  optionSegmented: document.getElementById('option-segmented'),
-  optionDownscaled: document.getElementById('option-downscaled'),
-  exportCancelBtn: document.getElementById('export-cancel-btn'),
   
   // Overlays
   loadingOverlay: document.getElementById('loading-overlay'),
@@ -326,9 +320,8 @@ function init() {
     }
   });
 
-  // Exports
   elements.exportPngBtn.addEventListener('click', exportPNG);
-  elements.exportPdfBtn.addEventListener('click', exportPDF);
+  elements.exportSvgBtn.addEventListener('click', exportSVG);
 
   // Initialize Theme from localStorage
   const currentTheme = localStorage.getItem('theme') || 'dark';
@@ -1386,7 +1379,7 @@ function updateStatistics() {
   // Enable/Disable export actions
   const hasPlacements = placedCount > 0;
   elements.exportPngBtn.disabled = !hasPlacements;
-  elements.exportPdfBtn.disabled = !hasPlacements;
+  elements.exportSvgBtn.disabled = !hasPlacements;
 }
 
 // --- Packing Execution (Nesting Trigger) ---
@@ -1473,38 +1466,6 @@ function optimizeLayout() {
   });
 }
 
-// --- High-Resolution Output Generation ---
-function promptExportOptions(onSegmented, onDownscaled) {
-  elements.exportOptionsModal.classList.remove('hidden');
-  
-  const handleSegmented = () => {
-    elements.exportOptionsModal.classList.add('hidden');
-    removeListeners();
-    onSegmented();
-  };
-  
-  const handleDownscaled = () => {
-    elements.exportOptionsModal.classList.add('hidden');
-    removeListeners();
-    onDownscaled();
-  };
-  
-  const handleCancel = () => {
-    elements.exportOptionsModal.classList.add('hidden');
-    removeListeners();
-  };
-  
-  const removeListeners = () => {
-    elements.optionSegmented.removeEventListener('click', handleSegmented);
-    elements.optionDownscaled.removeEventListener('click', handleDownscaled);
-    elements.exportCancelBtn.removeEventListener('click', handleCancel);
-  };
-  
-  elements.optionSegmented.addEventListener('click', handleSegmented);
-  elements.optionDownscaled.addEventListener('click', handleDownscaled);
-  elements.exportCancelBtn.addEventListener('click', handleCancel);
-}
-
 async function exportPNG() {
   if (state.placedItems.length === 0) return;
   
@@ -1523,19 +1484,16 @@ async function exportPNG() {
     const ratio = Math.min(ratioDim, ratioArea);
     const safeDpi = Math.round(state.dpi * ratio);
     
-    elements.modalTargetDpi.textContent = state.dpi;
-    elements.modalSafeDpi.textContent = safeDpi;
+    alert(`Do giới hạn bộ nhớ của trình duyệt đối với file ảnh PNG đơn lẻ khổ lớn, độ phân giải đã được tự động điều chỉnh về mức tối đa có thể (${safeDpi} DPI) để tránh bị lỗi hình ảnh.\n\nĐể xuất file giữ nguyên độ phân giải chất lượng cao nhất (${state.dpi} DPI) không giới hạn chiều dài, vui lòng sử dụng chức năng "Xuất file SVG"!`);
     
-    promptExportOptions(
-      () => exportSegmentedPNG(),
-      () => exportSinglePNG(safeDpi)
-    );
+    exportSinglePNG(safeDpi);
   } else {
     exportSinglePNG(state.dpi);
   }
 }
 
 async function exportSinglePNG(dpi) {
+  elements.exportOverlay.querySelector('p').textContent = 'Đang xử lý kết xuất file PNG...';
   elements.exportOverlay.classList.remove('hidden');
   setTimeout(() => {
     const scaleFactor = dpi / (2.54 * state.PX_PER_CM);
@@ -1574,251 +1532,49 @@ async function exportSinglePNG(dpi) {
   }, 100);
 }
 
-async function exportSegmentedPNG() {
-  const MAX_DIMENSION = 16384;
-  const maxSegmentHeightCm = Math.min(
-    100, // 1 meter segments
-    Math.floor((MAX_DIMENSION * 2.54 / state.dpi) * 0.9)
-  );
-  
-  const maxExtentYCm = state.placedItems.reduce((max, item) => Math.max(max, item.y + item.h), 0);
-  const numSegments = Math.ceil(maxExtentYCm / maxSegmentHeightCm);
-  
-  elements.exportOverlay.classList.remove('hidden');
-  
-  for (let k = 0; k < numSegments; k++) {
-    elements.exportOverlay.querySelector('p').textContent = `Đang xử lý phân đoạn ${k+1} / ${numSegments}...`;
-    
-    const yStart = k * maxSegmentHeightCm;
-    const hSegmentCm = Math.min(maxSegmentHeightCm, maxExtentYCm - yStart);
-    
-    const widthPx = Math.ceil(state.sheetWidthCm * (state.dpi / 2.54));
-    const heightPx = Math.ceil(hSegmentCm * (state.dpi / 2.54));
-    
-    const segmentCanvas = document.createElement('canvas');
-    segmentCanvas.width = widthPx;
-    segmentCanvas.height = heightPx;
-    const segmentCtx = segmentCanvas.getContext('2d');
-    
-    state.placedItems.forEach(item => {
-      const imgItem = state.images.find(x => x.id === item.parentImageId);
-      if (!imgItem) return;
-      
-      const itemYStart = item.y;
-      const itemYEnd = item.y + item.h;
-      const yEnd = yStart + hSegmentCm;
-      
-      const overlaps = itemYStart < yEnd && itemYEnd > yStart;
-      if (!overlaps) return;
-      
-      segmentCtx.save();
-      
-      const cxPx = item.centerX * (state.dpi / 2.54);
-      const cyPx = (item.centerY - yStart) * (state.dpi / 2.54);
-      const targetWPx = item.targetWidthCm * (state.dpi / 2.54);
-      const targetHPx = item.targetHeightCm * (state.dpi / 2.54);
-      
-      segmentCtx.translate(cxPx, cyPx);
-      segmentCtx.rotate(item.angle * Math.PI / 180);
-      segmentCtx.drawImage(imgItem.img, -targetWPx/2, -targetHPx/2, targetWPx, targetHPx);
-      
-      segmentCtx.restore();
-    });
-    
-    await new Promise((resolve) => {
-      segmentCanvas.toBlob((blob) => {
-        const link = document.createElement('a');
-        link.download = `dtf_nest_sheet_part_${k+1}_${state.sheetWidthCm}cm_${state.dpi}dpi.png`;
-        link.href = URL.createObjectURL(blob);
-        link.click();
-        setTimeout(resolve, 400); // 400ms delay between downloads
-      }, 'image/png');
-    });
-  }
-  
-  elements.exportOverlay.classList.add('hidden');
-}
-
-async function exportPDF() {
+async function exportSVG() {
   if (state.placedItems.length === 0) return;
   
-  const scaleFactor = state.dpi / (2.54 * state.PX_PER_CM);
-  const widthPx = Math.ceil(elements.canvas.width * scaleFactor);
-  const heightPx = Math.ceil(elements.canvas.height * scaleFactor);
-  const MAX_DIMENSION = 16384; 
-  const MAX_AREA = 16384 * 16384;
-  
-  const currentArea = widthPx * heightPx;
-  const exceedsLimits = widthPx > MAX_DIMENSION || heightPx > MAX_DIMENSION || currentArea > MAX_AREA;
-  
-  if (exceedsLimits) {
-    const ratioDim = Math.min(MAX_DIMENSION / widthPx, MAX_DIMENSION / heightPx);
-    const ratioArea = Math.sqrt(MAX_AREA / currentArea);
-    const ratio = Math.min(ratioDim, ratioArea);
-    const safeDpi = Math.round(state.dpi * ratio);
-    
-    elements.modalTargetDpi.textContent = state.dpi;
-    elements.modalSafeDpi.textContent = safeDpi;
-    
-    promptExportOptions(
-      () => exportSegmentedPDF(),
-      () => exportSinglePDF(safeDpi)
-    );
-  } else {
-    exportSinglePDF(state.dpi);
-  }
-}
-
-async function exportSinglePDF(dpi) {
-  if (!window.jspdf) {
-    elements.exportOverlay.querySelector('p').textContent = 'Đang tải thư viện PDF từ máy chủ CDN...';
-    elements.exportOverlay.classList.remove('hidden');
-    
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-      script.onload = resolve;
-      script.onerror = reject;
-      document.body.appendChild(script);
-    });
-  }
-  
-  elements.exportOverlay.querySelector('p').textContent = 'Đang xử lý kết xuất file PDF...';
+  elements.exportOverlay.querySelector('p').textContent = 'Đang tạo file SVG...';
   elements.exportOverlay.classList.remove('hidden');
   
   setTimeout(() => {
-    const scaleFactor = dpi / (2.54 * state.PX_PER_CM);
-    const widthPx = Math.ceil(elements.canvas.width * scaleFactor);
-    const heightPx = Math.ceil(elements.canvas.height * scaleFactor);
-    
-    const exportCanvas = document.createElement('canvas');
-    exportCanvas.width = widthPx;
-    exportCanvas.height = heightPx;
-    const exportCtx = exportCanvas.getContext('2d');
-    
-    state.placedItems.forEach(item => {
-      const imgItem = state.images.find(x => x.id === item.parentImageId);
-      if (!imgItem) return;
+    try {
+      const wCm = state.sheetWidthCm;
+      const hCm = elements.canvas.height / state.PX_PER_CM;
       
-      exportCtx.save();
-      const cxPx = item.centerX * (dpi / 2.54);
-      const cyPx = item.centerY * (dpi / 2.54);
-      const targetWPx = item.targetWidthCm * (dpi / 2.54);
-      const targetHPx = item.targetHeightCm * (dpi / 2.54);
+      let svgContent = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n`;
+      svgContent += `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${wCm}cm" height="${hCm}cm" viewBox="0 0 ${wCm} ${hCm}">\n`;
+      svgContent += `  <rect width="100%" height="100%" fill="none" />\n`;
       
-      exportCtx.translate(cxPx, cyPx);
-      exportCtx.rotate(item.angle * Math.PI / 180);
-      exportCtx.drawImage(imgItem.img, -targetWPx/2, -targetHPx/2, targetWPx, targetHPx);
-      exportCtx.restore();
-    });
-    
-    const { jsPDF } = window.jspdf;
-    const wMm = state.sheetWidthCm * 10;
-    const hMm = (elements.canvas.height / state.PX_PER_CM) * 10;
-    
-    const doc = new jsPDF({
-      orientation: wMm > hMm ? 'landscape' : 'portrait',
-      unit: 'mm',
-      format: [wMm, hMm]
-    });
-    
-    const imgData = exportCanvas.toDataURL('image/png');
-    doc.addImage(imgData, 'PNG', 0, 0, wMm, hMm, undefined, 'FAST');
-    
-    doc.save(`dtf_nest_sheet_${state.sheetWidthCm}cm_${dpi}dpi.pdf`);
-    elements.exportOverlay.classList.add('hidden');
-  }, 100);
-}
-
-async function exportSegmentedPDF() {
-  if (!window.jspdf) {
-    elements.exportOverlay.querySelector('p').textContent = 'Đang tải thư viện PDF từ máy chủ CDN...';
-    elements.exportOverlay.classList.remove('hidden');
-    
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-      script.onload = resolve;
-      script.onerror = reject;
-      document.body.appendChild(script);
-    });
-  }
-  
-  elements.exportOverlay.classList.remove('hidden');
-  
-  const MAX_DIMENSION = 16384;
-  const maxSegmentHeightCm = Math.min(
-    100, // 1 meter segments
-    Math.floor((MAX_DIMENSION * 2.54 / state.dpi) * 0.9)
-  );
-  
-  const maxExtentYCm = state.placedItems.reduce((max, item) => Math.max(max, item.y + item.h), 0);
-  const numSegments = Math.ceil(maxExtentYCm / maxSegmentHeightCm);
-  
-  const { jsPDF } = window.jspdf;
-  let doc = null;
-  
-  for (let k = 0; k < numSegments; k++) {
-    elements.exportOverlay.querySelector('p').textContent = `Đang kết xuất phân đoạn ${k+1} / ${numSegments} sang PDF...`;
-    
-    const yStart = k * maxSegmentHeightCm;
-    const hSegmentCm = Math.min(maxSegmentHeightCm, maxExtentYCm - yStart);
-    
-    const widthPx = Math.ceil(state.sheetWidthCm * (state.dpi / 2.54));
-    const heightPx = Math.ceil(hSegmentCm * (state.dpi / 2.54));
-    
-    const segmentCanvas = document.createElement('canvas');
-    segmentCanvas.width = widthPx;
-    segmentCanvas.height = heightPx;
-    const segmentCtx = segmentCanvas.getContext('2d');
-    
-    state.placedItems.forEach(item => {
-      const imgItem = state.images.find(x => x.id === item.parentImageId);
-      if (!imgItem) return;
-      
-      const itemYStart = item.y;
-      const itemYEnd = item.y + item.h;
-      const yEnd = yStart + hSegmentCm;
-      
-      const overlaps = itemYStart < yEnd && itemYEnd > yStart;
-      if (!overlaps) return;
-      
-      segmentCtx.save();
-      
-      const cxPx = item.centerX * (state.dpi / 2.54);
-      const cyPx = (item.centerY - yStart) * (state.dpi / 2.54);
-      const targetWPx = item.targetWidthCm * (state.dpi / 2.54);
-      const targetHPx = item.targetHeightCm * (state.dpi / 2.54);
-      
-      segmentCtx.translate(cxPx, cyPx);
-      segmentCtx.rotate(item.angle * Math.PI / 180);
-      segmentCtx.drawImage(imgItem.img, -targetWPx/2, -targetHPx/2, targetWPx, targetHPx);
-      
-      segmentCtx.restore();
-    });
-    
-    const imgData = segmentCanvas.toDataURL('image/png');
-    const wMm = state.sheetWidthCm * 10;
-    const hMm = hSegmentCm * 10;
-    
-    if (k === 0) {
-      doc = new jsPDF({
-        orientation: wMm > hMm ? 'landscape' : 'portrait',
-        unit: 'mm',
-        format: [wMm, hMm]
+      state.placedItems.forEach(item => {
+        const imgItem = state.images.find(x => x.id === item.parentImageId);
+        if (!imgItem) return;
+        
+        const base64Src = imgItem.img.src;
+        const xTranslate = item.centerX;
+        const yTranslate = item.centerY;
+        const wVal = item.targetWidthCm;
+        const hVal = item.targetHeightCm;
+        const angle = item.angle;
+        
+        svgContent += `  <image href="${base64Src}" x="${-wVal/2}" y="${-hVal/2}" width="${wVal}" height="${hVal}" transform="translate(${xTranslate}, ${yTranslate}) rotate(${angle})" />\n`;
       });
-    } else {
-      doc.addPage([wMm, hMm], wMm > hMm ? 'landscape' : 'portrait');
+      
+      svgContent += `</svg>\n`;
+      
+      const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
+      const link = document.createElement('a');
+      link.download = `dtf_nest_sheet_${state.sheetWidthCm}cm.svg`;
+      link.href = URL.createObjectURL(blob);
+      link.click();
+    } catch (error) {
+      console.error("Lỗi xuất SVG:", error);
+      alert("Có lỗi xảy ra khi tạo file SVG.");
+    } finally {
+      elements.exportOverlay.classList.add('hidden');
     }
-    
-    doc.addImage(imgData, 'PNG', 0, 0, wMm, hMm, undefined, 'FAST');
-    
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  
-  elements.exportOverlay.querySelector('p').textContent = 'Đang tải xuống file PDF...';
-  doc.save(`dtf_nest_sheet_${state.sheetWidthCm}cm_segmented.pdf`);
-  elements.exportOverlay.classList.add('hidden');
+  }, 100);
 }
 
 // Start application
