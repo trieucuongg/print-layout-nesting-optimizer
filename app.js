@@ -199,6 +199,12 @@ const elements = {
   themeToggleBtn: document.getElementById('theme-toggle-btn'),
   undoBtn: document.getElementById('undo-btn'),
   redoBtn: document.getElementById('redo-btn'),
+  exportOptionsModal: document.getElementById('export-options-modal'),
+  modalTargetDpi: document.getElementById('modal-target-dpi'),
+  modalSafeDpi: document.getElementById('modal-safe-dpi'),
+  optionSegmented: document.getElementById('option-segmented'),
+  optionDownscaled: document.getElementById('option-downscaled'),
+  exportCancelBtn: document.getElementById('export-cancel-btn'),
   
   // Overlays
   loadingOverlay: document.getElementById('loading-overlay'),
@@ -1468,92 +1474,202 @@ function optimizeLayout() {
 }
 
 // --- High-Resolution Output Generation ---
-function renderHighResCanvas() {
-  return new Promise((resolve) => {
-    elements.exportOverlay.classList.remove('hidden');
-    
-    // Yield to UI to paint spinner
-    setTimeout(() => {
-      const scaleFactor = state.dpi / (2.54 * state.PX_PER_CM); // scale from layout to high-res target DPI
-      
-      let widthPx = Math.ceil(elements.canvas.width * scaleFactor);
-      let heightPx = Math.ceil(elements.canvas.height * scaleFactor);
-      
-      // Browser safety limits
-      const MAX_DIMENSION = 16384; 
-      const MAX_AREA = 16384 * 16384; // 268 Megapixels
-      
-      let currentArea = widthPx * heightPx;
-      let ratio = 1.0;
-      let needsScaleDown = false;
-      
-      if (widthPx > MAX_DIMENSION || heightPx > MAX_DIMENSION || currentArea > MAX_AREA) {
-        needsScaleDown = true;
-        const ratioDim = Math.min(MAX_DIMENSION / widthPx, MAX_DIMENSION / heightPx);
-        const ratioArea = Math.sqrt(MAX_AREA / currentArea);
-        ratio = Math.min(ratioDim, ratioArea);
-        
-        widthPx = Math.floor(widthPx * ratio);
-        heightPx = Math.floor(heightPx * ratio);
-      }
-      
-      if (needsScaleDown) {
-        const targetDpi = Math.round(state.dpi * ratio);
-        alert(`Cảnh báo: Kích thước sơ đồ in quá lớn vượt quá giới hạn bộ nhớ của trình duyệt ở độ phân giải ${state.dpi} DPI. Hệ thống sẽ tự động giảm độ phân giải xuống còn ${targetDpi} DPI để đảm bảo tệp tin có thể được xuất thành công.`);
-      }
-      
-      const drawDpi = state.dpi * ratio;
-      
-      const exportCanvas = document.createElement('canvas');
-      exportCanvas.width = widthPx;
-      exportCanvas.height = heightPx;
-      const exportCtx = exportCanvas.getContext('2d');
-      
-      // Draw all items scaled
-      state.placedItems.forEach(item => {
-        const imgItem = state.images.find(x => x.id === item.parentImageId);
-        if (!imgItem) return;
-        
-        // Draw onto the sheet export canvas
-        exportCtx.save();
-        
-        const cxPx = item.centerX * (drawDpi / 2.54);
-        const cyPx = item.centerY * (drawDpi / 2.54);
-        const targetWPx = item.targetWidthCm * (drawDpi / 2.54);
-        const targetHPx = item.targetHeightCm * (drawDpi / 2.54);
-        
-        exportCtx.translate(cxPx, cyPx);
-        exportCtx.rotate(item.angle * Math.PI / 180);
-        
-        exportCtx.drawImage(imgItem.img, -targetWPx/2, -targetHPx/2, targetWPx, targetHPx);
-        exportCtx.restore();
-      });
-      
-      elements.exportOverlay.classList.add('hidden');
-      resolve(exportCanvas);
-    }, 100);
-  });
+function promptExportOptions(onSegmented, onDownscaled) {
+  elements.exportOptionsModal.classList.remove('hidden');
+  
+  const handleSegmented = () => {
+    elements.exportOptionsModal.classList.add('hidden');
+    removeListeners();
+    onSegmented();
+  };
+  
+  const handleDownscaled = () => {
+    elements.exportOptionsModal.classList.add('hidden');
+    removeListeners();
+    onDownscaled();
+  };
+  
+  const handleCancel = () => {
+    elements.exportOptionsModal.classList.add('hidden');
+    removeListeners();
+  };
+  
+  const removeListeners = () => {
+    elements.optionSegmented.removeEventListener('click', handleSegmented);
+    elements.optionDownscaled.removeEventListener('click', handleDownscaled);
+    elements.exportCancelBtn.removeEventListener('click', handleCancel);
+  };
+  
+  elements.optionSegmented.addEventListener('click', handleSegmented);
+  elements.optionDownscaled.addEventListener('click', handleDownscaled);
+  elements.exportCancelBtn.addEventListener('click', handleCancel);
 }
 
 async function exportPNG() {
   if (state.placedItems.length === 0) return;
   
-  const highResCanvas = await renderHighResCanvas();
+  const scaleFactor = state.dpi / (2.54 * state.PX_PER_CM);
+  const widthPx = Math.ceil(elements.canvas.width * scaleFactor);
+  const heightPx = Math.ceil(elements.canvas.height * scaleFactor);
+  const MAX_DIMENSION = 16384; 
+  const MAX_AREA = 16384 * 16384;
   
-  // Trigger download
-  const link = document.createElement('a');
-  link.download = `dtf_nest_sheet_${state.sheetWidthCm}cm_${state.dpi}dpi.png`;
+  const currentArea = widthPx * heightPx;
+  const exceedsLimits = widthPx > MAX_DIMENSION || heightPx > MAX_DIMENSION || currentArea > MAX_AREA;
   
-  highResCanvas.toBlob((blob) => {
-    link.href = URL.createObjectURL(blob);
-    link.click();
-  }, 'image/png');
+  if (exceedsLimits) {
+    const ratioDim = Math.min(MAX_DIMENSION / widthPx, MAX_DIMENSION / heightPx);
+    const ratioArea = Math.sqrt(MAX_AREA / currentArea);
+    const ratio = Math.min(ratioDim, ratioArea);
+    const safeDpi = Math.round(state.dpi * ratio);
+    
+    elements.modalTargetDpi.textContent = state.dpi;
+    elements.modalSafeDpi.textContent = safeDpi;
+    
+    promptExportOptions(
+      () => exportSegmentedPNG(),
+      () => exportSinglePNG(safeDpi)
+    );
+  } else {
+    exportSinglePNG(state.dpi);
+  }
+}
+
+async function exportSinglePNG(dpi) {
+  elements.exportOverlay.classList.remove('hidden');
+  setTimeout(() => {
+    const scaleFactor = dpi / (2.54 * state.PX_PER_CM);
+    const widthPx = Math.ceil(elements.canvas.width * scaleFactor);
+    const heightPx = Math.ceil(elements.canvas.height * scaleFactor);
+    
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = widthPx;
+    exportCanvas.height = heightPx;
+    const exportCtx = exportCanvas.getContext('2d');
+    
+    state.placedItems.forEach(item => {
+      const imgItem = state.images.find(x => x.id === item.parentImageId);
+      if (!imgItem) return;
+      
+      exportCtx.save();
+      const cxPx = item.centerX * (dpi / 2.54);
+      const cyPx = item.centerY * (dpi / 2.54);
+      const targetWPx = item.targetWidthCm * (dpi / 2.54);
+      const targetHPx = item.targetHeightCm * (dpi / 2.54);
+      
+      exportCtx.translate(cxPx, cyPx);
+      exportCtx.rotate(item.angle * Math.PI / 180);
+      exportCtx.drawImage(imgItem.img, -targetWPx/2, -targetHPx/2, targetWPx, targetHPx);
+      exportCtx.restore();
+    });
+    
+    const link = document.createElement('a');
+    link.download = `dtf_nest_sheet_${state.sheetWidthCm}cm_${dpi}dpi.png`;
+    
+    exportCanvas.toBlob((blob) => {
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      elements.exportOverlay.classList.add('hidden');
+    }, 'image/png');
+  }, 100);
+}
+
+async function exportSegmentedPNG() {
+  const MAX_DIMENSION = 16384;
+  const maxSegmentHeightCm = Math.min(
+    100, // 1 meter segments
+    Math.floor((MAX_DIMENSION * 2.54 / state.dpi) * 0.9)
+  );
+  
+  const maxExtentYCm = state.placedItems.reduce((max, item) => Math.max(max, item.y + item.h), 0);
+  const numSegments = Math.ceil(maxExtentYCm / maxSegmentHeightCm);
+  
+  elements.exportOverlay.classList.remove('hidden');
+  
+  for (let k = 0; k < numSegments; k++) {
+    elements.exportOverlay.querySelector('p').textContent = `Đang xử lý phân đoạn ${k+1} / ${numSegments}...`;
+    
+    const yStart = k * maxSegmentHeightCm;
+    const hSegmentCm = Math.min(maxSegmentHeightCm, maxExtentYCm - yStart);
+    
+    const widthPx = Math.ceil(state.sheetWidthCm * (state.dpi / 2.54));
+    const heightPx = Math.ceil(hSegmentCm * (state.dpi / 2.54));
+    
+    const segmentCanvas = document.createElement('canvas');
+    segmentCanvas.width = widthPx;
+    segmentCanvas.height = heightPx;
+    const segmentCtx = segmentCanvas.getContext('2d');
+    
+    state.placedItems.forEach(item => {
+      const imgItem = state.images.find(x => x.id === item.parentImageId);
+      if (!imgItem) return;
+      
+      const itemYStart = item.y;
+      const itemYEnd = item.y + item.h;
+      const yEnd = yStart + hSegmentCm;
+      
+      const overlaps = itemYStart < yEnd && itemYEnd > yStart;
+      if (!overlaps) return;
+      
+      segmentCtx.save();
+      
+      const cxPx = item.centerX * (state.dpi / 2.54);
+      const cyPx = (item.centerY - yStart) * (state.dpi / 2.54);
+      const targetWPx = item.targetWidthCm * (state.dpi / 2.54);
+      const targetHPx = item.targetHeightCm * (state.dpi / 2.54);
+      
+      segmentCtx.translate(cxPx, cyPx);
+      segmentCtx.rotate(item.angle * Math.PI / 180);
+      segmentCtx.drawImage(imgItem.img, -targetWPx/2, -targetHPx/2, targetWPx, targetHPx);
+      
+      segmentCtx.restore();
+    });
+    
+    await new Promise((resolve) => {
+      segmentCanvas.toBlob((blob) => {
+        const link = document.createElement('a');
+        link.download = `dtf_nest_sheet_part_${k+1}_${state.sheetWidthCm}cm_${state.dpi}dpi.png`;
+        link.href = URL.createObjectURL(blob);
+        link.click();
+        setTimeout(resolve, 400); // 400ms delay between downloads
+      }, 'image/png');
+    });
+  }
+  
+  elements.exportOverlay.classList.add('hidden');
 }
 
 async function exportPDF() {
   if (state.placedItems.length === 0) return;
   
-  // Dynamic load jsPDF library
+  const scaleFactor = state.dpi / (2.54 * state.PX_PER_CM);
+  const widthPx = Math.ceil(elements.canvas.width * scaleFactor);
+  const heightPx = Math.ceil(elements.canvas.height * scaleFactor);
+  const MAX_DIMENSION = 16384; 
+  const MAX_AREA = 16384 * 16384;
+  
+  const currentArea = widthPx * heightPx;
+  const exceedsLimits = widthPx > MAX_DIMENSION || heightPx > MAX_DIMENSION || currentArea > MAX_AREA;
+  
+  if (exceedsLimits) {
+    const ratioDim = Math.min(MAX_DIMENSION / widthPx, MAX_DIMENSION / heightPx);
+    const ratioArea = Math.sqrt(MAX_AREA / currentArea);
+    const ratio = Math.min(ratioDim, ratioArea);
+    const safeDpi = Math.round(state.dpi * ratio);
+    
+    elements.modalTargetDpi.textContent = state.dpi;
+    elements.modalSafeDpi.textContent = safeDpi;
+    
+    promptExportOptions(
+      () => exportSegmentedPDF(),
+      () => exportSinglePDF(safeDpi)
+    );
+  } else {
+    exportSinglePDF(state.dpi);
+  }
+}
+
+async function exportSinglePDF(dpi) {
   if (!window.jspdf) {
     elements.exportOverlay.querySelector('p').textContent = 'Đang tải thư viện PDF từ máy chủ CDN...';
     elements.exportOverlay.classList.remove('hidden');
@@ -1565,37 +1681,144 @@ async function exportPDF() {
       script.onerror = reject;
       document.body.appendChild(script);
     });
-    
-    elements.exportOverlay.querySelector('p').textContent = 'Vui lòng chờ trong giây lát. Quá trình này có thể mất vài giây tùy vào DPI và chiều dài cuộn.';
-    elements.exportOverlay.classList.add('hidden');
   }
   
-  const highResCanvas = await renderHighResCanvas();
-  
-  elements.exportOverlay.querySelector('p').textContent = 'Đang xuất tệp PDF...';
+  elements.exportOverlay.querySelector('p').textContent = 'Đang xử lý kết xuất file PDF...';
   elements.exportOverlay.classList.remove('hidden');
   
   setTimeout(() => {
-    // Generate PDF in standard millimeters (mm)
-    const { jsPDF } = window.jspdf;
+    const scaleFactor = dpi / (2.54 * state.PX_PER_CM);
+    const widthPx = Math.ceil(elements.canvas.width * scaleFactor);
+    const heightPx = Math.ceil(elements.canvas.height * scaleFactor);
     
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = widthPx;
+    exportCanvas.height = heightPx;
+    const exportCtx = exportCanvas.getContext('2d');
+    
+    state.placedItems.forEach(item => {
+      const imgItem = state.images.find(x => x.id === item.parentImageId);
+      if (!imgItem) return;
+      
+      exportCtx.save();
+      const cxPx = item.centerX * (dpi / 2.54);
+      const cyPx = item.centerY * (dpi / 2.54);
+      const targetWPx = item.targetWidthCm * (dpi / 2.54);
+      const targetHPx = item.targetHeightCm * (dpi / 2.54);
+      
+      exportCtx.translate(cxPx, cyPx);
+      exportCtx.rotate(item.angle * Math.PI / 180);
+      exportCtx.drawImage(imgItem.img, -targetWPx/2, -targetHPx/2, targetWPx, targetHPx);
+      exportCtx.restore();
+    });
+    
+    const { jsPDF } = window.jspdf;
     const wMm = state.sheetWidthCm * 10;
     const hMm = (elements.canvas.height / state.PX_PER_CM) * 10;
     
-    // Create custom page dimension PDF matching roll size
     const doc = new jsPDF({
       orientation: wMm > hMm ? 'landscape' : 'portrait',
       unit: 'mm',
       format: [wMm, hMm]
     });
     
-    // Add canvas as PNG image (compression level medium to retain quality)
-    const imgData = highResCanvas.toDataURL('image/png');
+    const imgData = exportCanvas.toDataURL('image/png');
     doc.addImage(imgData, 'PNG', 0, 0, wMm, hMm, undefined, 'FAST');
     
-    doc.save(`dtf_nest_sheet_${state.sheetWidthCm}cm.pdf`);
+    doc.save(`dtf_nest_sheet_${state.sheetWidthCm}cm_${dpi}dpi.pdf`);
     elements.exportOverlay.classList.add('hidden');
   }, 100);
+}
+
+async function exportSegmentedPDF() {
+  if (!window.jspdf) {
+    elements.exportOverlay.querySelector('p').textContent = 'Đang tải thư viện PDF từ máy chủ CDN...';
+    elements.exportOverlay.classList.remove('hidden');
+    
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.body.appendChild(script);
+    });
+  }
+  
+  elements.exportOverlay.classList.remove('hidden');
+  
+  const MAX_DIMENSION = 16384;
+  const maxSegmentHeightCm = Math.min(
+    100, // 1 meter segments
+    Math.floor((MAX_DIMENSION * 2.54 / state.dpi) * 0.9)
+  );
+  
+  const maxExtentYCm = state.placedItems.reduce((max, item) => Math.max(max, item.y + item.h), 0);
+  const numSegments = Math.ceil(maxExtentYCm / maxSegmentHeightCm);
+  
+  const { jsPDF } = window.jspdf;
+  let doc = null;
+  
+  for (let k = 0; k < numSegments; k++) {
+    elements.exportOverlay.querySelector('p').textContent = `Đang kết xuất phân đoạn ${k+1} / ${numSegments} sang PDF...`;
+    
+    const yStart = k * maxSegmentHeightCm;
+    const hSegmentCm = Math.min(maxSegmentHeightCm, maxExtentYCm - yStart);
+    
+    const widthPx = Math.ceil(state.sheetWidthCm * (state.dpi / 2.54));
+    const heightPx = Math.ceil(hSegmentCm * (state.dpi / 2.54));
+    
+    const segmentCanvas = document.createElement('canvas');
+    segmentCanvas.width = widthPx;
+    segmentCanvas.height = heightPx;
+    const segmentCtx = segmentCanvas.getContext('2d');
+    
+    state.placedItems.forEach(item => {
+      const imgItem = state.images.find(x => x.id === item.parentImageId);
+      if (!imgItem) return;
+      
+      const itemYStart = item.y;
+      const itemYEnd = item.y + item.h;
+      const yEnd = yStart + hSegmentCm;
+      
+      const overlaps = itemYStart < yEnd && itemYEnd > yStart;
+      if (!overlaps) return;
+      
+      segmentCtx.save();
+      
+      const cxPx = item.centerX * (state.dpi / 2.54);
+      const cyPx = (item.centerY - yStart) * (state.dpi / 2.54);
+      const targetWPx = item.targetWidthCm * (state.dpi / 2.54);
+      const targetHPx = item.targetHeightCm * (state.dpi / 2.54);
+      
+      segmentCtx.translate(cxPx, cyPx);
+      segmentCtx.rotate(item.angle * Math.PI / 180);
+      segmentCtx.drawImage(imgItem.img, -targetWPx/2, -targetHPx/2, targetWPx, targetHPx);
+      
+      segmentCtx.restore();
+    });
+    
+    const imgData = segmentCanvas.toDataURL('image/png');
+    const wMm = state.sheetWidthCm * 10;
+    const hMm = hSegmentCm * 10;
+    
+    if (k === 0) {
+      doc = new jsPDF({
+        orientation: wMm > hMm ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: [wMm, hMm]
+      });
+    } else {
+      doc.addPage([wMm, hMm], wMm > hMm ? 'landscape' : 'portrait');
+    }
+    
+    doc.addImage(imgData, 'PNG', 0, 0, wMm, hMm, undefined, 'FAST');
+    
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  
+  elements.exportOverlay.querySelector('p').textContent = 'Đang tải xuống file PDF...';
+  doc.save(`dtf_nest_sheet_${state.sheetWidthCm}cm_segmented.pdf`);
+  elements.exportOverlay.classList.add('hidden');
 }
 
 // Start application

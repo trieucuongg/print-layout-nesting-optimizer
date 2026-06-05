@@ -1141,3 +1141,12 @@ select, input, button, .image-item-row, .dropzone, .ruler {
   border-radius: 12px;
   border: 1px solid var(--border-color);
 }
+
+/* Export Options Modal Cards */
+.export-option-card {
+  background-color: var(--bg-panel);
+}
+.export-option-card:hover {
+  border-color: var(--primary-accent) !important;
+  background-color: var(--bg-input);
+}

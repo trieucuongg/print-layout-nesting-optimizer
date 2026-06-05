@@ -234,6 +234,35 @@
         <p>Vui lòng chờ trong giây lát. Quá trình này có thể mất vài giây tùy vào DPI và chiều dài cuộn.</p>
       </div>
     </div>
+
+    <!-- Export Options Modal -->
+    <div id="export-options-modal" class="loading-overlay hidden">
+      <div class="loader-content" style="max-width: 500px; text-align: left; align-items: flex-start;">
+        <h3 style="display: flex; align-items: center; gap: 10px; font-family: var(--font-display);"><i class="fa-solid fa-triangle-exclamation" style="color: var(--color-warning);"></i> Cấu hình xuất file chất lượng cao</h3>
+        <p style="margin: 8px 0 16px; line-height: 1.6; font-size: 13px; color: var(--text-muted);">
+          Kích thước sơ đồ in quá lớn vượt quá giới hạn bộ nhớ của trình duyệt ở độ phân giải hiện tại. Vui lòng lựa chọn phương thức xuất để đảm bảo chất lượng in tốt nhất:
+        </p>
+        <div class="export-option-card" id="option-segmented" style="width: 100%; padding: 14px; border: 1px solid var(--border-color); border-radius: 10px; cursor: pointer; margin-bottom: 12px; transition: all var(--transition-fast);">
+          <div style="font-weight: 600; color: var(--primary-accent); display: flex; align-items: center; gap: 8px; font-size: 14px;">
+            <i class="fa-regular fa-clone"></i> Xuất chia đoạn chất lượng cao (Khuyên dùng)
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">
+            Giữ nguyên độ nét tối đa (<strong><span id="modal-target-dpi">300</span> DPI</strong>). Bản vẽ sẽ được chia thành các file riêng biệt dài tối đa 1 mét (hoặc nhiều trang liên tục đối với PDF).
+          </div>
+        </div>
+        <div class="export-option-card" id="option-downscaled" style="width: 100%; padding: 14px; border: 1px solid var(--border-color); border-radius: 10px; cursor: pointer; margin-bottom: 20px; transition: all var(--transition-fast);">
+          <div style="font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 8px; font-size: 14px;">
+            <i class="fa-regular fa-file-image"></i> Xuất một file duy nhất
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">
+            Hệ thống sẽ tự động giảm độ phân giải xuống còn <strong><span id="modal-safe-dpi">139</span> DPI</strong> để gom toàn bộ cuộn vào một file duy nhất mà không gây lỗi tràn bộ nhớ trình duyệt.
+          </div>
+        </div>
+        <div style="display: flex; gap: 12px; width: 100%; justify-content: flex-end;">
+          <button id="export-cancel-btn" class="secondary-btn" style="padding: 8px 16px;">Hủy bỏ</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>
