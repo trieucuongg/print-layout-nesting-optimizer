@@ -13,9 +13,9 @@ const state = {
   
   // Sheet configurations
   sheetWidthCm: 57,
-  sheetLengthCm: 'auto', // 'auto' or fixed number
+  sheetLengthCm: 300, // 'auto' or fixed number
   autoFill: true,
-  gapMm: 5,
+  gapMm: 3,
   rotationStepDeg: 5,
   precisionMm: 1,
   dpi: 300,
@@ -33,13 +33,23 @@ const state = {
   PX_PER_CM: 10, // 1cm = 10px on display screen
 };
 
-// History Manager for Undo (Ctrl+Z)
+// History Manager for Undo/Redo
 const history = {
   undoStack: [],
+  redoStack: [],
   maxDepth: 50,
   
   save() {
-    const snapshot = JSON.stringify(state.placedItems);
+    const snapshot = JSON.stringify({
+      placedItems: state.placedItems,
+      images: state.images.map(img => ({
+        id: img.id,
+        name: img.name,
+        targetWidthCm: img.targetWidthCm,
+        targetHeightCm: img.targetHeightCm,
+        quantity: img.quantity
+      }))
+    });
     if (this.undoStack.length > 0 && this.undoStack[this.undoStack.length - 1] === snapshot) {
       return;
     }
@@ -47,33 +57,104 @@ const history = {
     if (this.undoStack.length > this.maxDepth) {
       this.undoStack.shift();
     }
+    this.redoStack = []; // Clear redo stack on new action
+    this.updateButtons();
   },
   
   undo() {
     if (this.undoStack.length <= 1) {
-      if (this.undoStack.length === 1 && state.placedItems.length > 0) {
+      if (this.undoStack.length === 1 && (state.placedItems.length > 0 || state.images.length > 0)) {
+        // Move current state to redo
+        const currentState = this.undoStack.pop();
+        this.redoStack.push(currentState);
+        
         state.placedItems = [];
+        state.images = [];
         state.selectedItem = null;
+        elements.imageListContainer.innerHTML = `
+          <div class="empty-list-state">
+            <i class="fa-regular fa-image"></i>
+            <p>Chưa có hình in nào được tải lên</p>
+          </div>
+        `;
+        updateImageCount();
         if (state.sheetLengthCm === 'auto') {
           updateSheetDimensions();
         } else {
           drawCanvas();
         }
         updateStatistics();
+        this.updateButtons();
       }
       return;
     }
-    this.undoStack.pop();
+    
+    // Pop current state and push to redo
+    const currentState = this.undoStack.pop();
+    this.redoStack.push(currentState);
+    
+    // Peek at previous state
     const prevStateString = this.undoStack[this.undoStack.length - 1];
     if (prevStateString) {
-      state.placedItems = JSON.parse(prevStateString);
-      state.selectedItem = null;
-      if (state.sheetLengthCm === 'auto') {
-        updateSheetDimensions();
-      } else {
-        drawCanvas();
-      }
-      updateStatistics();
+      this.restore(prevStateString);
+    }
+    this.updateButtons();
+  },
+  
+  redo() {
+    if (this.redoStack.length === 0) return;
+    
+    // Pop state from redo and push to undo
+    const nextStateString = this.redoStack.pop();
+    this.undoStack.push(nextStateString);
+    
+    this.restore(nextStateString);
+    this.updateButtons();
+  },
+  
+  restore(stateString) {
+    const prevState = JSON.parse(stateString);
+    state.placedItems = prevState.placedItems;
+    state.images = prevState.images.map(imgData => ({
+      id: imgData.id,
+      name: imgData.name,
+      img: imageCache[imgData.id],
+      originalWidth: imageCache[imgData.id] ? imageCache[imgData.id].naturalWidth : 100,
+      originalHeight: imageCache[imgData.id] ? imageCache[imgData.id].naturalHeight : 100,
+      targetWidthCm: imgData.targetWidthCm,
+      targetHeightCm: imgData.targetHeightCm,
+      quantity: imgData.quantity
+    }));
+    state.selectedItem = null;
+    
+    // Re-render sidebar image list
+    elements.imageListContainer.innerHTML = '';
+    if (state.images.length === 0) {
+      elements.imageListContainer.innerHTML = `
+        <div class="empty-list-state">
+          <i class="fa-regular fa-image"></i>
+          <p>Chưa có hình in nào được tải lên</p>
+        </div>
+      `;
+    } else {
+      state.images.forEach(img => renderImageRow(img));
+    }
+    
+    updateImageCount();
+    if (state.sheetLengthCm === 'auto') {
+      updateSheetDimensions();
+    } else {
+      drawCanvas();
+    }
+    updateStatistics();
+  },
+  
+  updateButtons() {
+    if (elements.undoBtn) {
+      elements.undoBtn.disabled = this.undoStack.length <= 1 && !(this.undoStack.length === 1 && (state.placedItems.length > 0 || state.images.length > 0));
+    }
+    if (elements.redoBtn) {
+      elements.redoBtn.disabled = this.redoStack.length === 0;
     }
   }
 };
@@ -115,6 +196,9 @@ const elements = {
   zoomOutBtn: document.getElementById('zoom-out-btn'),
   zoomResetBtn: document.getElementById('zoom-reset-btn'),
   toggleGridBtn: document.getElementById('toggle-grid-btn'),
+  themeToggleBtn: document.getElementById('theme-toggle-btn'),
+  undoBtn: document.getElementById('undo-btn'),
+  redoBtn: document.getElementById('redo-btn'),
   
   // Overlays
   loadingOverlay: document.getElementById('loading-overlay'),
@@ -125,6 +209,7 @@ const elements = {
 
 const ctx = elements.canvas.getContext('2d');
 let nextImageId = 1;
+const imageCache = {};
 
 // --- Initialize Event Listeners ---
 function init() {
@@ -212,20 +297,56 @@ function init() {
     drawCanvas();
   });
 
-  // Keyboard Shortcuts (R key to rotate selected item, Ctrl+Z to undo)
+  // Undo/Redo HUD controls click
+  elements.undoBtn.addEventListener('click', () => history.undo());
+  elements.redoBtn.addEventListener('click', () => history.redo());
+
+  // Keyboard Shortcuts (R key to rotate selected item, Ctrl+Z to undo, Ctrl+Y or Ctrl+Shift+Z to redo)
   window.addEventListener('keydown', (e) => {
     if ((e.key === 'r' || e.key === 'R') && state.selectedItem) {
       rotateSelectedItem();
     }
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
-      e.preventDefault();
-      history.undo();
+    if (e.ctrlKey || e.metaKey) {
+      if (e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        history.redo();
+      } else if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault();
+        history.undo();
+      } else if (e.key === 'y' || e.key === 'Y') {
+        e.preventDefault();
+        history.redo();
+      }
     }
   });
 
   // Exports
   elements.exportPngBtn.addEventListener('click', exportPNG);
   elements.exportPdfBtn.addEventListener('click', exportPDF);
+
+  // Initialize Theme from localStorage
+  const currentTheme = localStorage.getItem('theme') || 'dark';
+  if (currentTheme === 'light') {
+    document.body.classList.add('light-theme');
+    const icon = elements.themeToggleBtn.querySelector('i');
+    if (icon) {
+      icon.className = 'fa-solid fa-sun';
+    }
+  }
+
+  // Theme Toggle Button Event
+  elements.themeToggleBtn.addEventListener('click', () => {
+    const isLight = document.body.classList.toggle('light-theme');
+    const icon = elements.themeToggleBtn.querySelector('i');
+    if (icon) {
+      icon.className = isLight ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+    }
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    
+    // Redraw the canvas elements using the new theme styles
+    drawRulers();
+    drawCanvas();
+  });
 
   // Initial layout sizing
   updateSheetDimensions();
@@ -273,10 +394,13 @@ function processFiles(fileList) {
           quantity: 1
         };
         
+        imageCache[imgItem.id] = img; // Lưu cache
         state.images.push(imgItem);
         
         renderImageRow(imgItem);
         updateImageCount();
+        updateStatistics();
+        history.save(); // Lưu lịch sử tải ảnh
       };
       img.src = event.target.result;
     };
@@ -299,73 +423,75 @@ function renderImageRow(imgItem) {
   row.dataset.id = imgItem.id;
   
   row.innerHTML = `
-    <div class="item-thumb">
-      <img src="${imgItem.img.src}" alt="${imgItem.name}">
-    </div>
-    <div class="item-details">
-      <div class="item-name" title="${imgItem.name}">${imgItem.name}</div>
-      <div class="item-dimensions">
-        <input type="number" class="w-cm-input" value="${imgItem.targetWidthCm}" min="1" max="${state.sheetWidthCm}" step="0.5" style="width: 50px; padding: 2px 4px; display: inline-block;"> cm W
-        <span>&times;</span>
-        <span class="h-cm-val">${imgItem.targetHeightCm} cm H</span>
+    <div class="row-top">
+      <div class="item-thumb">
+        <img src="${imgItem.img.src}" alt="${imgItem.name}">
+      </div>
+      <div class="item-details">
+        <div class="item-name" title="${imgItem.name}">${imgItem.name}</div>
+        <div class="item-placement-status" style="font-size: 11px; margin-top: 4px; color: var(--text-muted); font-weight: 500;">
+          Đã xếp: <span class="placed-qty-val">0</span> / <span class="req-qty-val">${imgItem.quantity}</span>
+        </div>
       </div>
     </div>
-    <div class="item-qty-controls">
-      <button class="qty-btn qty-minus"><i class="fa-solid fa-minus"></i></button>
-      <input type="number" class="qty-val" value="${imgItem.quantity}" min="1">
-      <button class="qty-btn qty-plus"><i class="fa-solid fa-plus"></i></button>
-    </div>
-    <div class="item-actions">
-      <button class="row-delete-btn" title="Xóa"><i class="fa-solid fa-trash-can"></i></button>
+    <div class="row-bottom">
+      <div class="item-qty-controls">
+        <button class="qty-btn qty-minus"><i class="fa-solid fa-minus"></i></button>
+        <input type="number" class="qty-val" value="${imgItem.quantity}" min="1">
+        <button class="qty-btn qty-plus"><i class="fa-solid fa-plus"></i></button>
+      </div>
+      <div class="item-actions">
+        <button class="row-delete-btn" title="Xóa"><i class="fa-solid fa-trash-can"></i> Xóa</button>
+      </div>
     </div>
   `;
   
   // Binding row elements listeners
-  const wInput = row.querySelector('.w-cm-input');
-  const hVal = row.querySelector('.h-cm-val');
   const qtyInput = row.querySelector('.qty-val');
-  
-  wInput.addEventListener('change', (e) => {
-    let w = parseFloat(e.target.value);
-    if (isNaN(w) || w <= 0) w = 10;
-    if (w > state.sheetWidthCm) w = state.sheetWidthCm;
-    
-    e.target.value = w;
-    imgItem.targetWidthCm = w;
-    
-    // Scale height proportionally
-    const aspect = imgItem.originalHeight / imgItem.originalWidth;
-    imgItem.targetHeightCm = Math.round((w * aspect) * 10) / 10;
-    hVal.textContent = `${imgItem.targetHeightCm} cm H`;
-  });
   
   // Quantity handlers
   row.querySelector('.qty-minus').addEventListener('click', () => {
     let qty = parseInt(qtyInput.value) - 1;
     if (qty < 1) qty = 1;
     qtyInput.value = qty;
+    
+    history.save();
     imgItem.quantity = qty;
     updateImageCount();
+    updateStatistics();
+    history.save();
   });
   
   row.querySelector('.qty-plus').addEventListener('click', () => {
     let qty = parseInt(qtyInput.value) + 1;
     qtyInput.value = qty;
+    
+    history.save();
     imgItem.quantity = qty;
     updateImageCount();
+    updateStatistics();
+    history.save();
   });
   
   qtyInput.addEventListener('change', (e) => {
     let qty = parseInt(e.target.value);
     if (isNaN(qty) || qty < 1) qty = 1;
     e.target.value = qty;
+    
+    history.save();
     imgItem.quantity = qty;
     updateImageCount();
+    updateStatistics();
+    history.save();
   });
   
   // Delete handler
   row.querySelector('.row-delete-btn').addEventListener('click', () => {
+    history.save(); // Lưu trước khi xóa
+    
     state.images = state.images.filter(x => x.id !== imgItem.id);
+    state.placedItems = state.placedItems.filter(x => x.parentImageId !== imgItem.id); // Xóa cả các bản xếp trên canvas
+    
     row.remove();
     updateImageCount();
     
@@ -377,6 +503,15 @@ function renderImageRow(imgItem) {
         </div>
       `;
     }
+    
+    if (state.sheetLengthCm === 'auto') {
+      updateSheetDimensions();
+    } else {
+      drawCanvas();
+    }
+    
+    updateStatistics();
+    history.save(); // Lưu sau khi xóa
   });
   
   container.appendChild(row);
@@ -391,6 +526,7 @@ function clearAllImages() {
   if (state.images.length === 0) return;
   
   if (confirm("Bạn có chắc chắn muốn xóa toàn bộ danh sách hình ảnh tải lên?")) {
+    history.save(); // Lưu trước khi xóa sạch
     state.images = [];
     state.placedItems = [];
     state.selectedItem = null;
@@ -403,6 +539,7 @@ function clearAllImages() {
     updateImageCount();
     updateStatistics();
     drawCanvas();
+    history.save(); // Lưu sau khi xóa sạch
   }
 }
 
@@ -542,9 +679,9 @@ function drawRulers() {
   ctxTop.clearRect(0, 0, wTop, 20);
   ctxLeft.clearRect(0, 0, 20, hLeft);
   
-  // Styling
-  const textColor = '#8a96ab'; // var(--text-muted)
-  const tickColor = '#2b3348'; // var(--border-color)
+  // Styling (Dynamic from CSS Variables)
+  const textColor = getComputedStyle(document.body).getPropertyValue('--text-muted').trim() || '#8a96ab';
+  const tickColor = getComputedStyle(document.body).getPropertyValue('--border-color').trim() || 'rgba(255, 255, 255, 0.06)';
   
   ctxTop.fillStyle = textColor;
   ctxTop.strokeStyle = tickColor;
@@ -612,7 +749,8 @@ function drawCanvas() {
   
   // Draw Grid lines
   if (state.showGrid) {
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    const isLightTheme = document.body.classList.contains('light-theme');
+    ctx.strokeStyle = isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 0.5;
     const gridSpacing = state.PX_PER_CM; // 1cm grid
     
@@ -703,6 +841,14 @@ function drawCanvas() {
       ctx.fill();
       ctx.stroke();
       
+      // Dimension text below the item
+      ctx.fillStyle = 'var(--border-focus)';
+      ctx.font = `600 ${Math.round(11 * scale)}px Inter, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const dimText = `${item.targetWidthCm.toFixed(1)} x ${item.targetHeightCm.toFixed(1)} cm`;
+      ctx.fillText(dimText, 0, drawHPx/2 + 8 * scale);
+      
       ctx.restore();
     } else if (isColliding) {
       ctx.lineWidth = 1;
@@ -710,13 +856,14 @@ function drawCanvas() {
       ctx.strokeRect(pxX, pxY, pxW, pxH);
     } else {
       ctx.lineWidth = 1;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      const isLightTheme = document.body.classList.contains('light-theme');
+      ctx.strokeStyle = isLightTheme ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.1)';
       ctx.strokeRect(pxX, pxY, pxW, pxH);
     }
   });
 }
 
-// --- Drag & Drop Manual Fine-Tuning ---
+// --- Drag & Drop Manual Fine-Tuning & Resizing ---
 function handleMouseDown(e) {
   const rect = elements.viewport.getBoundingClientRect();
   const mouseX = e.clientX - rect.left;
@@ -729,7 +876,64 @@ function handleMouseDown(e) {
   const cmX = canvasX / state.PX_PER_CM;
   const cmY = canvasY / state.PX_PER_CM;
   
-  // 1. Check if clicked on rotation handle of selected item
+  // 1. Check if clicked on resize handle of selected item
+  if (state.selectedItem) {
+    const item = state.selectedItem;
+    // Calculate vector from center to mouse
+    const dx = cmX - item.centerX;
+    const dy = cmY - item.centerY;
+    
+    // Rotate vector backwards by item angle to get local coordinates
+    const angleRad = -item.angle * Math.PI / 180;
+    const localX = dx * Math.cos(angleRad) - dy * Math.sin(angleRad);
+    const localY = dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+    
+    const handleHalfW = item.targetWidthCm / 2;
+    const handleHalfH = item.targetHeightCm / 2;
+    
+    // Check if close to any of the 4 corners
+    const distTL = Math.sqrt((localX + handleHalfW)**2 + (localY + handleHalfH)**2);
+    const distTR = Math.sqrt((localX - handleHalfW)**2 + (localY + handleHalfH)**2);
+    const distBL = Math.sqrt((localX + handleHalfW)**2 + (localY - handleHalfH)**2);
+    const distBR = Math.sqrt((localX - handleHalfW)**2 + (localY - handleHalfH)**2);
+    
+    // Click radius is 15 screen pixels: (15 / state.zoom) / PX_PER_CM cm
+    const clickRadiusCm = 15 / (state.zoom * state.PX_PER_CM);
+    
+    let clickedHandle = null;
+    if (distTL < clickRadiusCm) clickedHandle = 'TL';
+    else if (distTR < clickRadiusCm) clickedHandle = 'TR';
+    else if (distBL < clickRadiusCm) clickedHandle = 'BL';
+    else if (distBR < clickRadiusCm) clickedHandle = 'BR';
+    
+    if (clickedHandle) {
+      state.isResizing = true;
+      state.resizingItem = item;
+      state.resizeHandle = clickedHandle;
+      state.originalAspectRatio = item.targetHeightCm / item.targetWidthCm;
+      
+      // Calculate and store the fixed opposite anchor point in sheet coordinates
+      let uAnchor = 0;
+      let vAnchor = 0;
+      if (clickedHandle === 'TL') { uAnchor = handleHalfW; vAnchor = handleHalfH; }
+      else if (clickedHandle === 'TR') { uAnchor = -handleHalfW; vAnchor = handleHalfH; }
+      else if (clickedHandle === 'BL') { uAnchor = handleHalfW; vAnchor = -handleHalfH; }
+      else if (clickedHandle === 'BR') { uAnchor = -handleHalfW; vAnchor = -handleHalfH; }
+      
+      const rad = item.angle * Math.PI / 180;
+      state.resizeAnchor = {
+        x: item.centerX + uAnchor * Math.cos(rad) - vAnchor * Math.sin(rad),
+        y: item.centerY + uAnchor * Math.sin(rad) + vAnchor * Math.cos(rad),
+        uAnchorMultiplier: uAnchor > 0 ? 1 : -1,
+        vAnchorMultiplier: vAnchor > 0 ? 1 : -1
+      };
+      
+      history.save(); // Save history snapshot before starting resize
+      return; // Handled as resize, exit
+    }
+  }
+
+  // 2. Check if clicked on rotation handle of selected item
   if (state.selectedItem) {
     const item = state.selectedItem;
     // Calculate vector from center to mouse
@@ -742,14 +946,13 @@ function handleMouseDown(e) {
     const localY = dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
     
     // Rotation handle is at (0, -height/2 - stickLength) in local space
-    // stickLength on screen is 25px, which in cm is (25 / state.zoom) / PX_PER_CM
     const stickLengthCm = 25 / (state.zoom * state.PX_PER_CM);
     const handleYCm = -item.targetHeightCm/2 - stickLengthCm;
     
     // Distance to handle in local space
     const distToHandle = Math.sqrt(localX*localX + (localY - handleYCm)*(localY - handleYCm));
     
-    // Click radius is 15 screen pixels: (15 / state.zoom) / PX_PER_CM cm
+    // Click radius is 15 screen pixels
     const clickRadiusCm = 15 / (state.zoom * state.PX_PER_CM);
     
     if (distToHandle < clickRadiusCm) {
@@ -761,7 +964,7 @@ function handleMouseDown(e) {
     }
   }
 
-  // 2. Precise Rotated Hit Detection for items (reverse scan)
+  // 3. Precise Rotated Hit Detection for items (reverse scan)
   let clickedItem = null;
   for (let i = state.placedItems.length - 1; i >= 0; i--) {
     const item = state.placedItems[i];
@@ -822,6 +1025,90 @@ function handleMouseMove(e) {
   const cmX = canvasX / state.PX_PER_CM;
   const cmY = canvasY / state.PX_PER_CM;
   
+  if (state.isPanning) {
+    state.pan.x = e.clientX - state.panStart.x;
+    state.pan.y = e.clientY - state.panStart.y;
+    updateViewportTransform();
+    return;
+  }
+  
+  // Handle Proportional Resize
+  if (state.isResizing && state.resizingItem) {
+    const item = state.resizingItem;
+    const anchor = state.resizeAnchor;
+    
+    // Calculate vector from anchor to mouse in sheet coordinates
+    const dx = cmX - anchor.x;
+    const dy = cmY - anchor.y;
+    
+    // Rotate vector backwards by item angle to get local coordinates relative to anchor
+    const rad = item.angle * Math.PI / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const dxLocal = dx * cos + dy * sin;
+    const dyLocal = -dx * sin + dy * cos;
+    
+    // Determine target dimensions
+    const sx = -anchor.uAnchorMultiplier;
+    const sy = -anchor.vAnchorMultiplier;
+    
+    const wCand = dxLocal * sx;
+    const hCand = dyLocal * sy;
+    
+    const r = state.originalAspectRatio;
+    let wNew = (wCand + hCand / r) / 2;
+    
+    // Clamp new width to be between 1.0cm and sheet width
+    wNew = Math.max(1.0, Math.min(wNew, state.sheetWidthCm));
+    const hNew = wNew * r;
+    
+    // Compute new center based on new local anchor position
+    const uAnchorNew = anchor.uAnchorMultiplier * (wNew / 2);
+    const vAnchorNew = anchor.vAnchorMultiplier * (hNew / 2);
+    
+    let newCenterX = anchor.x - uAnchorNew * cos + vAnchorNew * sin;
+    let newCenterY = anchor.y - uAnchorNew * sin - vAnchorNew * cos;
+    
+    // Set properties
+    item.targetWidthCm = wNew;
+    item.targetHeightCm = hNew;
+    item.centerX = newCenterX;
+    item.centerY = newCenterY;
+    
+    // Update AABB
+    updateItemAABB(item);
+    
+    // Keep within bounds
+    if (item.x < 0) {
+      const shift = -item.x;
+      item.x = 0;
+      item.centerX += shift;
+    }
+    if (item.x + item.w > state.sheetWidthCm) {
+      const shift = (item.x + item.w) - state.sheetWidthCm;
+      item.x = state.sheetWidthCm - item.w;
+      item.centerX -= shift;
+    }
+    if (item.y < 0) {
+      const shift = -item.y;
+      item.y = 0;
+      item.centerY += shift;
+    }
+    if (state.sheetLengthCm !== 'auto' && item.y + item.h > state.sheetLengthCm) {
+      const shift = (item.y + item.h) - state.sheetLengthCm;
+      item.y = state.sheetLengthCm - item.h;
+      item.centerY -= shift;
+    }
+    
+    if (state.sheetLengthCm === 'auto') {
+      updateSheetDimensions();
+    }
+    
+    drawCanvas();
+    updateStatistics();
+    return;
+  }
+  
   if (state.isRotating && state.selectedItem) {
     const item = state.selectedItem;
     let mouseAngleDeg = Math.atan2(cmY - item.centerY, cmX - item.centerX) * 180 / Math.PI;
@@ -834,9 +1121,9 @@ function handleMouseMove(e) {
     
     item.angle = newAngle;
     
-    // We should ideally update AABB for collision, but for performance
-    // and simplicity we just recalculate the approximate bounding box if needed,
-    // or let it be. Let's just update drawing.
+    // Update AABB to reflect rotation in collision
+    updateItemAABB(item);
+    
     drawCanvas();
     updateStatistics();
     return;
@@ -884,9 +1171,20 @@ function handleMouseMove(e) {
       const handleYCm = -item.targetHeightCm/2 - stickLengthCm;
       const distToHandle = Math.sqrt(localX*localX + (localY - handleYCm)*(localY - handleYCm));
       
+      const handleHalfW = item.targetWidthCm / 2;
+      const handleHalfH = item.targetHeightCm / 2;
+      const distTL = Math.sqrt((localX + handleHalfW)**2 + (localY + handleHalfH)**2);
+      const distTR = Math.sqrt((localX - handleHalfW)**2 + (localY + handleHalfH)**2);
+      const distBL = Math.sqrt((localX + handleHalfW)**2 + (localY - handleHalfH)**2);
+      const distBR = Math.sqrt((localX - handleHalfW)**2 + (localY - handleHalfH)**2);
+      
       const hoverRadiusCm = 15 / (state.zoom * state.PX_PER_CM);
       
-      if (distToHandle < hoverRadiusCm) {
+      if (distTL < hoverRadiusCm || distBR < hoverRadiusCm) {
+        elements.viewport.style.cursor = 'nwse-resize';
+      } else if (distTR < hoverRadiusCm || distBL < hoverRadiusCm) {
+        elements.viewport.style.cursor = 'nesw-resize';
+      } else if (distToHandle < hoverRadiusCm) {
         elements.viewport.style.cursor = 'crosshair'; // Hovering rotation handle
       } else if (
         localX >= -item.targetWidthCm/2 &&
@@ -901,16 +1199,28 @@ function handleMouseMove(e) {
 }
 
 function handleMouseUp() {
-  if (state.draggedItem || state.isRotating) {
+  if (state.draggedItem || state.isRotating || state.isResizing) {
     if (state.sheetLengthCm === 'auto') {
       updateSheetDimensions();
     }
-    history.save(); // Save snapshot after dragging or rotating completes
+    history.save(); // Save snapshot after dragging, rotating or resizing completes
   }
   state.draggedItem = null;
   state.isPanning = false;
   state.isRotating = false;
+  state.isResizing = false;
+  state.resizingItem = null;
   elements.viewport.style.cursor = 'default';
+}
+
+function updateItemAABB(item) {
+  const rad = item.angle * Math.PI / 180;
+  const cos = Math.abs(Math.cos(rad));
+  const sin = Math.abs(Math.sin(rad));
+  item.w = item.targetWidthCm * cos + item.targetHeightCm * sin;
+  item.h = item.targetWidthCm * sin + item.targetHeightCm * cos;
+  item.x = item.centerX - item.w / 2;
+  item.y = item.centerY - item.h / 2;
 }
 
 function rotateSelectedItem() {
@@ -921,11 +1231,8 @@ function rotateSelectedItem() {
   // Advance angle by 90 deg for manual quick rotation
   item.angle = (item.angle + 90) % 360;
   
-  // Swap bounding box dimensions roughly
-  const oldW = item.w;
-  const oldH = item.h;
-  item.w = oldH;
-  item.h = oldW;
+  // Update bounding box dimensions accurately
+  updateItemAABB(item);
   
   // Re-constrain
   if (item.x + item.w > state.sheetWidthCm) {
@@ -1046,6 +1353,30 @@ function updateStatistics() {
     elements.statPlaced.textContent = `${placedCount} / ${totalShapes}`;
   }
   
+  // Update each image row placement status in the sidebar
+  state.images.forEach(imgItem => {
+    const row = document.querySelector(`.image-item-row[data-id="${imgItem.id}"]`);
+    if (row) {
+      const placedCount = state.placedItems.filter(item => item.parentImageId === imgItem.id).length;
+      const placedVal = row.querySelector('.placed-qty-val');
+      const reqVal = row.querySelector('.req-qty-val');
+      
+      if (placedVal) placedVal.textContent = placedCount;
+      if (reqVal) reqVal.textContent = imgItem.quantity;
+      
+      const statusDiv = row.querySelector('.item-placement-status');
+      if (statusDiv) {
+        if (placedCount === 0) {
+          statusDiv.style.color = 'var(--text-muted)';
+        } else if (placedCount >= imgItem.quantity) {
+          statusDiv.style.color = 'var(--color-success)';
+        } else {
+          statusDiv.style.color = 'var(--color-warning)';
+        }
+      }
+    }
+  });
+  
   // Enable/Disable export actions
   const hasPlacements = placedCount > 0;
   elements.exportPngBtn.disabled = !hasPlacements;
@@ -1070,43 +1401,70 @@ function optimizeLayout() {
   state.selectedItem = null;
   drawCanvas();
   
-  // Initialize Raster Optimizer
-  const fixedLengthCm = state.sheetLengthCm === 'auto' ? null : state.sheetLengthCm;
-  const optimizer = new RasterOptimizer(
-    state.sheetWidthCm,
-    state.gapMm,
-    state.rotationStepDeg,
-    state.precisionMm,
-    fixedLengthCm,
-    state.autoFill
-  );
+  // Convert images to ImageBitmaps for Worker transfer
+  const promises = state.images.map(async (imgItem) => {
+    const bitmap = await createImageBitmap(imgItem.img);
+    return {
+      id: imgItem.id,
+      name: imgItem.name,
+      bitmap: bitmap,
+      targetWidthCm: imgItem.targetWidthCm,
+      targetHeightCm: imgItem.targetHeightCm,
+      quantity: imgItem.quantity
+    };
+  });
   
-  // Run async optimizer
-  optimizer.optimizeAsync(
-    state.images,
-    // Step update callback
-    (placedList, percentage) => {
-      state.placedItems = placedList;
-      elements.optimizeProgress.style.width = `${percentage}%`;
-      elements.optimizePercentage.textContent = `${percentage}%`;
-      
-      if (state.sheetLengthCm === 'auto') {
-        updateSheetDimensions();
-      } else {
-        drawCanvas();
+  Promise.all(promises).then((shapes) => {
+    const transferables = shapes.map(s => s.bitmap);
+    
+    // Spawn Web Worker
+    const worker = new Worker('nesting-worker.js');
+    const fixedLengthCm = state.sheetLengthCm === 'auto' ? null : state.sheetLengthCm;
+    
+    worker.postMessage({
+      action: 'start',
+      shapes: shapes,
+      config: {
+        sheetWidthCm: state.sheetWidthCm,
+        gapMm: state.gapMm,
+        rotationStepDeg: state.rotationStepDeg,
+        precisionMm: state.precisionMm,
+        fixedLengthCm: fixedLengthCm,
+        autoFill: state.autoFill
       }
-    },
-    // Final complete callback
-    (finalPlacedList) => {
-      state.placedItems = finalPlacedList;
-      elements.loadingOverlay.classList.add('hidden');
+    }, transferables);
+    
+    worker.onmessage = function(e) {
+      const { action, placedItems, percentage } = e.data;
       
-      updateSheetDimensions();
-      updateStatistics();
-      resetViewport();
-      history.save(); // Save history snapshot of optimized layout
-    }
-  );
+      if (action === 'progress') {
+        state.placedItems = placedItems;
+        elements.optimizeProgress.style.width = `${percentage}%`;
+        elements.optimizePercentage.textContent = `${percentage}%`;
+        
+        if (state.sheetLengthCm === 'auto') {
+          updateSheetDimensions();
+        } else {
+          drawCanvas();
+        }
+      } else if (action === 'complete') {
+        state.placedItems = placedItems;
+        elements.loadingOverlay.classList.add('hidden');
+        
+        updateSheetDimensions();
+        updateStatistics();
+        resetViewport();
+        history.save(); // Save history snapshot of optimized layout
+        
+        // Terminate worker to free memory
+        worker.terminate();
+      }
+    };
+  }).catch(err => {
+    console.error("Error preparing images for worker:", err);
+    elements.loadingOverlay.classList.add('hidden');
+    alert("Có lỗi xảy ra khi xử lý dữ liệu ảnh.");
+  });
 }
 
 // --- High-Resolution Output Generation ---

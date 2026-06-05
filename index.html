@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DTF Smart Nest - Tối Ưu Hóa Khổ In Phim DTF/DTG</title>
-  <!-- Google Fonts: Inter -->
+  <!-- Google Fonts: Outfit, Plus Jakarta Sans, JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <!-- FontAwesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <!-- Custom CSS -->
@@ -19,113 +19,135 @@
     <!-- Sidebar Settings -->
     <aside class="sidebar">
       <div class="sidebar-header">
-        <h1>DTF Smart Nest</h1>
-        <p>AI Layout Optimizer</p>
+        <div class="brand-logo">
+          <i class="fa-solid fa-wand-magic-sparkles brand-icon"></i>
+          <div class="brand-text">
+            <h1>DTF Smart Nest</h1>
+            <span>AI Layout Optimizer</span>
+          </div>
+        </div>
       </div>
       
       <div class="sidebar-content">
-        <!-- Settings Form -->
-        <section class="settings-panel panel-card">
-          <h2 class="section-title"><i class="fa-solid fa-sliders"></i> Cấu hình khổ in</h2>
-          
-          <div class="control-group">
-            <label for="sheet-width-select">Chiều rộng cuộn (cm)</label>
-            <select id="sheet-width-select">
-              <option value="30">30 cm (A3 Roll)</option>
-              <option value="57" selected>57 cm (Khuyên dùng)</option>
-              <option value="60">60 cm</option>
-              <option value="120">120 cm</option>
-            </select>
+        <!-- Settings Form (Double Bezel) -->
+        <div class="panel-outer">
+          <div class="panel-inner">
+            <section class="settings-panel">
+              <h2 class="section-title"><i class="fa-solid fa-sliders"></i> Cấu hình khổ in</h2>
+              
+              <div class="control-group">
+                <label for="sheet-width-select">Chiều rộng cuộn (cm)</label>
+                <select id="sheet-width-select">
+                  <option value="30">30 cm (A3 Roll)</option>
+                  <option value="57" selected>57 cm (Khuyên dùng)</option>
+                  <option value="60">60 cm</option>
+                  <option value="120">120 cm</option>
+                </select>
+              </div>
+              
+              <div class="control-group">
+                <label for="length-select">Chiều dài cuộn (cm)</label>
+                <select id="length-select">
+                  <option value="auto">Tự động co giãn (Tối ưu nhất)</option>
+                  <option value="100">Cố định 100 cm (1m)</option>
+                  <option value="200">Cố định 200 cm (2m)</option>
+                  <option value="300" selected>Cố định 300 cm (3m)</option>
+                  <option value="500">Cố định 500 cm (5m)</option>
+                </select>
+              </div>
+              
+              <div class="checkbox-group" id="auto-fill-group" style="margin-top: -10px; margin-bottom: 20px;">
+                <label class="custom-checkbox">
+                  <input type="checkbox" id="auto-fill-check" checked>
+                  <span class="checkmark"></span>
+                  Tự động điền đầy khoảng trống
+                </label>
+              </div>
+              
+              <div class="control-group">
+                <div class="label-with-value">
+                  <label for="spacing-slider">Khoảng cách hình (mm)</label>
+                  <span id="spacing-val">3 mm</span>
+                </div>
+                <input type="range" id="spacing-slider" min="0" max="20" step="1" value="3">
+              </div>
+              
+              <div class="control-group">
+                <label for="dpi-select">Độ phân giải xuất file (DPI)</label>
+                <select id="dpi-select">
+                  <option value="150">150 DPI (Nhanh)</option>
+                  <option value="300" selected>300 DPI (Chuẩn in ấn)</option>
+                  <option value="600">600 DPI (Siêu nét)</option>
+                </select>
+              </div>
+              
+              <div class="control-group">
+                <label for="rotation-select">Góc xoay cho phép</label>
+                <select id="rotation-select">
+                  <option value="0">Không xoay (0°)</option>
+                  <option value="90">Chỉ xoay 90° (Nhanh)</option>
+                  <option value="45">Xoay mỗi 45°</option>
+                  <option value="15">Xoay mỗi 15° (Khuyên dùng)</option>
+                  <option value="5" selected>Tự do 5° (Tối ưu nhất - Chậm)</option>
+                </select>
+              </div>
+    
+              <div class="control-group">
+                <label for="precision-select">Độ chính xác (Lưới Raster)</label>
+                <select id="precision-select">
+                  <option value="5">Nhanh (Lưới 5mm)</option>
+                  <option value="2">Tiêu chuẩn (Lưới 2mm)</option>
+                  <option value="1" selected>Chất lượng cao (Lưới 1mm - Rất chậm)</option>
+                </select>
+              </div>
+            </section>
           </div>
-          
-          <div class="control-group">
-            <label for="length-select">Chiều dài cuộn (cm)</label>
-            <select id="length-select">
-              <option value="auto" selected>Tự động co giãn (Tối ưu nhất)</option>
-              <option value="100">Cố định 100 cm (1m)</option>
-              <option value="200">Cố định 200 cm (2m)</option>
-              <option value="300">Cố định 300 cm (3m)</option>
-              <option value="500">Cố định 500 cm (5m)</option>
-            </select>
-          </div>
-          
-          <div class="checkbox-group" id="auto-fill-group" style="display: none; margin-top: -10px; margin-bottom: 20px;">
-            <label class="custom-checkbox">
-              <input type="checkbox" id="auto-fill-check" checked>
-              <span class="checkmark"></span>
-              Tự động điền đầy khoảng trống
-            </label>
-          </div>
-          
-          <div class="control-group">
-            <div class="label-with-value">
-              <label for="spacing-slider">Khoảng cách hình (mm)</label>
-              <span id="spacing-val">5 mm</span>
-            </div>
-            <input type="range" id="spacing-slider" min="0" max="20" step="1" value="5">
-          </div>
-          
-          <div class="control-group">
-            <label for="dpi-select">Độ phân giải xuất file (DPI)</label>
-            <select id="dpi-select">
-              <option value="150">150 DPI (Nhanh)</option>
-              <option value="300" selected>300 DPI (Chuẩn in ấn)</option>
-              <option value="600">600 DPI (Siêu nét)</option>
-            </select>
-          </div>
-          
-          <div class="control-group">
-            <label for="rotation-select">Góc xoay cho phép</label>
-            <select id="rotation-select">
-              <option value="0">Không xoay (0°)</option>
-              <option value="90">Chỉ xoay 90° (Nhanh)</option>
-              <option value="45">Xoay mỗi 45°</option>
-              <option value="15">Xoay mỗi 15° (Khuyên dùng)</option>
-              <option value="5" selected>Tự do 5° (Tối ưu nhất - Chậm)</option>
-            </select>
-          </div>
-
-          <div class="control-group">
-            <label for="precision-select">Độ chính xác (Lưới Raster)</label>
-            <select id="precision-select">
-              <option value="5">Nhanh (Lưới 5mm)</option>
-              <option value="2">Tiêu chuẩn (Lưới 2mm)</option>
-              <option value="1" selected>Chất lượng cao (Lưới 1mm - Rất chậm)</option>
-            </select>
-          </div>
-        </section>
+        </div>
         
-        <!-- Upload Form -->
-        <section class="upload-panel panel-card">
-          <h2 class="section-title"><i class="fa-solid fa-cloud-arrow-up"></i> Tải ảnh lên</h2>
-          
-          <div id="dropzone" class="dropzone">
-            <i class="fa-solid fa-file-import drop-icon"></i>
-            <p>Kéo thả các file PNG vào đây<br>hoặc click để chọn</p>
-            <input type="file" id="file-input" multiple accept=".png">
+        <!-- Upload Form (Double Bezel) -->
+        <div class="panel-outer">
+          <div class="panel-inner">
+            <section class="upload-panel">
+              <h2 class="section-title"><i class="fa-solid fa-cloud-arrow-up"></i> Tải ảnh lên</h2>
+              
+              <div id="dropzone" class="dropzone">
+                <i class="fa-solid fa-file-import drop-icon"></i>
+                <p>Kéo thả các file PNG vào đây<br>hoặc click để chọn</p>
+                <input type="file" id="file-input" multiple accept=".png">
+              </div>
+            </section>
           </div>
-        </section>
+        </div>
         
-        <!-- Image List -->
-        <section class="image-list-panel panel-card" style="flex: 1; display: flex; flex-direction: column;">
-          <div class="list-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <h2 class="section-title" style="margin: 0;"><i class="fa-regular fa-images"></i> DANH SÁCH ẢNH (<span id="img-count">0</span>)</h2>
-            <button id="clear-all-btn" class="text-btn"><i class="fa-solid fa-trash-can"></i> Xóa hết</button>
+        <!-- Image List (Double Bezel) -->
+        <div class="panel-outer" style="flex: 1; display: flex; flex-direction: column; min-height: 250px;">
+          <div class="panel-inner" style="flex: 1; display: flex; flex-direction: column;">
+            <section class="image-list-panel" style="flex: 1; display: flex; flex-direction: column; height: 100%;">
+              <div class="list-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 class="section-title" style="margin: 0;"><i class="fa-regular fa-images"></i> DANH SÁCH ẢNH (<span id="img-count">0</span>)</h2>
+                <button id="clear-all-btn" class="text-btn"><i class="fa-solid fa-trash-can"></i> Xóa hết</button>
+              </div>
+              
+              <div id="image-list-container" class="image-list-container">
+                <div class="empty-list-state">
+                  <i class="fa-regular fa-image"></i>
+                  <p>Chưa có hình in nào được tải lên</p>
+                </div>
+                <!-- Dynamic rows will be injected here -->
+              </div>
+            </section>
           </div>
-          
-          <div id="image-list-container" class="image-list-container">
-            <div class="empty-list-state">
-              <i class="fa-regular fa-image"></i>
-              <p>Chưa có hình in nào được tải lên</p>
-            </div>
-            <!-- Dynamic rows will be injected here -->
-          </div>
-        </section>
+        </div>
       </div>
       
       <!-- Action Footer -->
       <div class="sidebar-footer">
-        <button id="optimize-btn" class="primary-btn pulse"><i class="fa-solid fa-wand-magic-sparkles"></i> Tối ưu hóa sơ đồ in</button>
+        <button id="optimize-btn" class="primary-btn">
+          Tối ưu hóa sơ đồ in
+          <span class="btn-icon-circle">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+          </span>
+        </button>
       </div>
     </aside>
     
@@ -152,6 +174,9 @@
         </div>
         
         <div class="action-buttons">
+          <button id="theme-toggle-btn" class="theme-btn" title="Chuyển chế độ Sáng/Tối">
+            <i class="fa-solid fa-moon"></i>
+          </button>
           <button id="export-png-btn" class="secondary-btn" disabled><i class="fa-regular fa-file-image"></i> Xuất file PNG</button>
           <button id="export-pdf-btn" class="secondary-btn" disabled><i class="fa-regular fa-file-pdf"></i> Xuất file PDF</button>
         </div>
@@ -166,6 +191,18 @@
         
         <div id="canvas-container" class="canvas-container">
           <canvas id="nest-canvas"></canvas>
+        </div>
+
+        <!-- Floating HUD Controls -->
+        <div class="floating-controls">
+          <button id="zoom-in-btn" title="Phóng to"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+          <button id="zoom-out-btn" title="Thu nhỏ"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+          <button id="zoom-reset-btn" title="Đặt lại góc nhìn"><i class="fa-solid fa-expand"></i></button>
+          <div class="control-separator"></div>
+          <button id="toggle-grid-btn" class="active" title="Bật/Tắt Lưới"><i class="fa-solid fa-border-all"></i></button>
+          <div class="control-separator"></div>
+          <button id="undo-btn" title="Hoàn tác (Ctrl+Z)" disabled><i class="fa-solid fa-arrow-rotate-left"></i></button>
+          <button id="redo-btn" title="Làm lại (Ctrl+Y)" disabled><i class="fa-solid fa-arrow-rotate-right"></i></button>
         </div>
       </div>
     </main>
@@ -199,7 +236,6 @@
     </div>
   </div>
 
-  <script src="nesting.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
