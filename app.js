@@ -1568,9 +1568,11 @@ async function exportSinglePNG(dpi) {
       const imgData = exportCtx.getImageData(0, 0, widthPx, heightPx);
       
       // UPNG.encode expects an array of ArrayBuffers containing raw RGBA pixels.
-      // imgData.data.buffer contains the raw RGBA pixels from Canvas.
       const compressed = window.UPNG.encode([imgData.data.buffer], widthPx, heightPx, 256);
-      const blob = new Blob([compressed], { type: 'image/png' });
+      
+      // Inject physical DPI metadata chunk
+      const patchedBuffer = insertDpiToPng(compressed, dpi);
+      const blob = new Blob([patchedBuffer], { type: 'image/png' });
       
       link.href = URL.createObjectURL(blob);
       link.click();
@@ -1580,9 +1582,19 @@ async function exportSinglePNG(dpi) {
       await new Promise(resolve => setTimeout(resolve, 50));
       
       exportCanvas.toBlob((blob) => {
-        link.href = URL.createObjectURL(blob);
-        link.click();
-        elements.exportOverlay.classList.add('hidden');
+        blob.arrayBuffer().then(buf => {
+          // Inject physical DPI metadata chunk
+          const patchedBuffer = insertDpiToPng(buf, dpi);
+          const patchedBlob = new Blob([patchedBuffer], { type: 'image/png' });
+          link.href = URL.createObjectURL(patchedBlob);
+          link.click();
+          elements.exportOverlay.classList.add('hidden');
+        }).catch(err => {
+          console.error("Lỗi chèn DPI metadata:", err);
+          link.href = URL.createObjectURL(blob);
+          link.click();
+          elements.exportOverlay.classList.add('hidden');
+        });
       }, 'image/png');
     }
   } catch (error) {
@@ -1590,6 +1602,71 @@ async function exportSinglePNG(dpi) {
     alert("Có lỗi xảy ra khi tạo ảnh PNG.");
     elements.exportOverlay.classList.add('hidden');
   }
+}
+
+// Helper to insert pHYs chunk into PNG ArrayBuffer to set physical DPI metadata
+function insertDpiToPng(arrayBuffer, dpi) {
+  const view = new DataView(arrayBuffer);
+  const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
+  
+  for (let i = 0; i < 8; i++) {
+    if (view.getUint8(i) !== pngSignature[i]) {
+      return arrayBuffer;
+    }
+  }
+  
+  const ppm = Math.round(dpi / 0.0254);
+  const chunkLength = 9;
+  const chunkType = [112, 72, 89, 115]; // "pHYs"
+  
+  const chunkData = new Uint8Array(9);
+  const dataView = new DataView(chunkData.buffer);
+  dataView.setUint32(0, ppm);
+  dataView.setUint32(4, ppm);
+  chunkData[8] = 1; // unit: meter
+  
+  const crcInput = new Uint8Array(4 + chunkLength);
+  crcInput.set(chunkType, 0);
+  crcInput.set(chunkData, 4);
+  const crc = crc32(crcInput);
+  
+  const physChunk = new Uint8Array(12 + chunkLength);
+  const physView = new DataView(physChunk.buffer);
+  physView.setUint32(0, chunkLength);
+  physChunk.set(chunkType, 4);
+  physChunk.set(chunkData, 8);
+  physView.setUint32(17, crc);
+  
+  const originalBytes = new Uint8Array(arrayBuffer);
+  const result = new Uint8Array(originalBytes.length + physChunk.length);
+  
+  // Signature + IHDR is exactly 33 bytes. Insert pHYs chunk right after.
+  result.set(originalBytes.subarray(0, 33), 0);
+  result.set(physChunk, 33);
+  result.set(originalBytes.subarray(33), 33 + physChunk.length);
+  
+  return result.buffer;
+}
+
+function crc32(uint8Array) {
+  let table = window.crc32Table;
+  if (!table) {
+    table = [];
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let j = 0; j < 8; j++) {
+        c = ((c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1));
+      }
+      table[i] = c;
+    }
+    window.crc32Table = table;
+  }
+  
+  let crc = 0 ^ (-1);
+  for (let i = 0; i < uint8Array.length; i++) {
+    crc = (crc >>> 8) ^ table[(crc ^ uint8Array[i]) & 0xFF];
+  }
+  return (crc ^ (-1)) >>> 0;
 }
 
 async function exportSVG() {
